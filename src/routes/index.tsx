@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import liveLink from "../../link.txt?raw";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -22,8 +23,62 @@ type Snap = { id: number; at: string; text: string; meta: Record<string, Meta>; 
 const MIN_SITES = 3;
 const PALETTE = 8;
 const LS = "massivas-v1";
-const LINE = /^(\S+)\s+(\S+)\s+(\S+)\s+(\d{2}\/\d{2}\/\d{2})\s+(\d{2}:\d{2})/;
-const LIVE_URL = "http://www-grbs.embratel.net.br/grb/topologia_rede/www/consulta_historico.php?refresh=5+min&id_rede=33&id_alarme=&id_conex=&todos_tuneis=N&centro=&rot=%2A&serial=&designacao=&texto_livre=&operadora=&al_ral_cad=N&id_agrupado=&sintoma=SEM_RESP_SNMP&status=NAO+NORMALIZADO&intervalo=ALL&sel_relat=0&acao=consultar&order_by=t2.id_alarme+desc&PERMS1=MjsxMDsyMDsyMTsyMjsyMzsyNDsyNTsyNjsyNzsyODsyOTszNTszNjszODszOTs0NDs0Njs1MDs1Mjs1NTs1Njs1ODs2MTs2Mjs2Mzs2NDs2NTs2Njs2OTs3MDs3Mzs3NDs3Nzs3ODs4OTs5MDs5NTs5NjsxMDE7MTAyOzEwNzsxMDg7MTEwOzExMTsxMjQ7MTI1OzEzMzsxMzQ7MTM4OzEzOTsxNDQ7MTQ1OzE0NzsxNDg7MTUxOzE1MjsxNTU7MTU2OzE1ODsxNTk7MTYxOzE2MjsxNjQ7MTY1OzE2NzsxNjg7MTcxOzE3MjsxNzQ7MTc1OzE3NzsxNzg7MTgwOzE4MTsxODM7MTg0OzE4NjsxODc7MTkwOzE5MTsxOTQ7MTk1OzE5OTsyMDA7MjAzOzIwNDsyMDc7MjA4OzIwOTsyMTE7MjEyOzIxNTsyMTY7MjE5OzIyMDsyMjI7MjIzOzIyNTsyMjY7MjMzOzIzNDs%3D&sintomas=97%3B0%3B70%3B39%3B77%3B19%3B1%3B80%3B95%3B98%3B22%3B76%3B42%3B88%3B89%3B36%3B40%3B2%3B3%3B21%3B20%3B116%3B56%3B109%3B87%3B52%3B4%3B93%3B107%3B111%3B31%3B27%3B5%3B55%3B114%3B17%3B43%3B83%3B41%3B6%3B54%3B26%3B28%3B69%3B91%3B33%3B94%3B74%3B7%3B110%3B18%3B57%3B30%3B112%3B86%3B90%3B75%3B118%3B68%3B58%3B104%3B8%3B23%3B25%3B24%3B92%3B9%3B79%3B59%3B117%3B81%3B51%3B71%3B34%3B10%3B60%3B105%3B102%3B103%3B78%3B11%3B12%3B106%3B85%3B82%3B37%3B72%3B73%3B13%3B14%3B15%3B16%3B96%3B101%3B38%3B32%3B99%3B29%3B113%3B100%3B35%3B84%3B115&remote_user=92465827&leo=&pagina=1&csv_output=1&pt_output=off&pt_id_tabela_csv=tabelaAlarme";
+const LINE = /^(\S+)\s+(\S+)\s+(.*?)\s*(\d{2}\/\d{2}\/\d{2})\s+(\d{2}:\d{2})/;
+const LIVE_URL = liveLink.trim();
+
+function openDb() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open("snmp-live", 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("kv");
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function savedDownloadsDir() {
+  const db = await openDb();
+  return new Promise<FileSystemDirectoryHandle | null>((resolve, reject) => {
+    const tx = db.transaction("kv", "readonly");
+    const req = tx.objectStore("kv").get("downloads");
+    req.onsuccess = () => resolve((req.result as FileSystemDirectoryHandle | undefined) ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function rememberDownloadsDir(dir: FileSystemDirectoryHandle) {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("kv", "readwrite");
+    tx.objectStore("kv").put(dir, "downloads");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function downloadsDir() {
+  const picker = window.showDirectoryPicker;
+  if (!picker) throw new Error("Este navegador não libera a pasta de downloads.");
+  let dir = await savedDownloadsDir();
+  if (!dir) {
+    dir = await picker.call(window, { id: "snmp-downloads", mode: "read" });
+    await rememberDownloadsDir(dir);
+  }
+  let perm = await dir.queryPermission({ mode: "read" });
+  if (perm !== "granted") perm = await dir.requestPermission({ mode: "read" });
+  if (perm !== "granted") throw new Error("Sem permissão para ler a pasta de downloads.");
+  return dir;
+}
+
+async function newestDownload(dir: FileSystemDirectoryHandle, since: number) {
+  let best: File | null = null;
+  for await (const entry of dir.values()) {
+    if (entry.kind !== "file") continue;
+    const file = await entry.getFile();
+    if (file.lastModified + 4000 < since) continue;
+    if (!best || file.lastModified > best.lastModified) best = file;
+  }
+  return best;
+}
 
 function siteLines(raw: string) {
   const seen = new Set<string>();
@@ -247,7 +302,7 @@ function Index() {
   const [reportShow, setReportShow] = useState({ obs1: true, obs2: true, sites: true });
   const [cols, setCols] = useState({ n: true, queda: true, qtd: true, sites: true, causa: true });
   const [liveText, setLiveText] = useState("");
-  const [liveState, setLiveState] = useState<"idle" | "ok" | "erro">("idle");
+  const [liveState, setLiveState] = useState<"idle" | "buscando" | "ok" | "erro">("idle");
   const [liveAt, setLiveAt] = useState("");
   const [liveError, setLiveError] = useState("");
   const [folded, setFolded] = useState<Record<string, boolean>>({});
@@ -302,19 +357,57 @@ function Index() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced, loaded]);
 
-  const loadCsv = async (file: File) => {
-    const raw = await file.text();
+  const applyCsv = (raw: string) => {
     const snmp = csvToSnmp(raw);
     if (!snmp.trim()) {
       setLiveText("");
       setLiveState("erro");
       setLiveError("Nenhuma estação SI nessa planilha.");
-      return;
+      return false;
     }
     setLiveText(snmp);
     setLiveError("");
     setLiveAt(new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     setLiveState("ok");
+    return true;
+  };
+
+  const loadCsv = async (file: File) => {
+    applyCsv(await file.text());
+  };
+
+  const atualizarAuto = async () => {
+    setLiveState("buscando");
+    setLiveError("");
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch(LIVE_URL, { cache: "no-store", signal: ctrl.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const raw = await res.text();
+      if (/<!doctype html|<html/i.test(raw)) throw new Error("html");
+      if (applyCsv(raw)) return;
+    } catch {
+      /* a página https não lê o endereço interno; segue pela pasta de downloads */
+    } finally {
+      clearTimeout(timer);
+    }
+    try {
+      setLiveError("Escolha a pasta Downloads. O arquivo novo entra sozinho.");
+      const since = Date.now();
+      const dir = await downloadsDir();
+      document.getElementById("baixar-planilha")?.click();
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const file = await newestDownload(dir, since);
+        if (file && applyCsv(await file.text())) return;
+      }
+      setLiveState("erro");
+      setLiveError("A planilha não chegou na pasta. Baixe de novo e tente outra vez.");
+    } catch (error) {
+      setLiveState("erro");
+      setLiveError(error instanceof Error ? error.message : "Não foi possível ler a pasta de downloads.");
+    }
   };
 
   const restore = (h: Snap) => {
@@ -479,14 +572,16 @@ function Index() {
         <div className="noc-live" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) void loadCsv(f); }}>
           <div className="flex items-center justify-between gap-2">
             <h3 className="noc-title">SNMP automático</h3>
-            <a className="noc-btn inline-block no-underline" href={LIVE_URL} target="_blank" rel="noreferrer">Baixar planilha</a>
+            <a id="baixar-planilha" className="noc-btn inline-block no-underline" href={LIVE_URL} download="snmp-si.csv" target="_blank" rel="noreferrer">Baixar planilha</a>
+            <button className="noc-btn" onClick={() => void atualizarAuto()}>Atualizar automático</button>
             <label className="noc-btn">
               Abrir CSV
-              <input className="hidden" type="file" accept=".csv,text/csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadCsv(f); e.target.value = ""; }} />
+              <input className="hidden" type="file" accept=".csv,text/csv,.php,text/plain" onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadCsv(f); e.target.value = ""; }} />
             </label>
           </div>
           <p className="noc-muted text-xs">
-            {liveState === "idle" && "Na VPN, baixe a planilha e abra o CSV. Só entram estações SI."}
+            {liveState === "idle" && "Na VPN, Baixar planilha manda o CSV para Downloads. Atualizar automático lê esse arquivo e mostra as estações SI."}
+            {liveState === "buscando" && (liveError || "Baixando e lendo a planilha...")}
             {liveState === "ok" && `${liveSites.length} estações SI · ${liveAt}`}
             {liveState === "erro" && liveError}
           </p>
