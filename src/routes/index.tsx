@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -16,15 +16,37 @@ export const Route = createFileRoute("/")({
 });
 
 type Site = { reg: string; equip: string; alarme: string; data: string; hora: string; key: string };
-type Meta = { obs1: string; causa: string; hidden: boolean; extra: string[]; color: number; manual?: boolean };
+type Meta = { obs1: string; causa: string; hidden: boolean; extra: string[]; sitesText?: string; color: number; manual?: boolean };
 
 type Snap = { id: number; at: string; text: string; meta: Record<string, Meta>; massivas: number; sites: number };
 const MIN_SITES = 3;
 const PALETTE = 8;
 const LS = "massivas-v1";
 const LINE = /^(\S+)\s+(\S+)\s+(\S+)\s+(\d{2}\/\d{2}\/\d{2})\s+(\d{2}:\d{2})/;
-const LIVE_MS = 5 * 60 * 1000;
 const LIVE_URL = "http://www-grbs.embratel.net.br/grb/topologia_rede/www/consulta_historico.php?refresh=5+min&id_rede=33&id_alarme=&id_conex=&todos_tuneis=N&centro=&rot=%2A&serial=&designacao=&texto_livre=&operadora=&al_ral_cad=N&id_agrupado=&sintoma=SEM_RESP_SNMP&status=NAO+NORMALIZADO&intervalo=ALL&sel_relat=0&acao=consultar&order_by=t2.id_alarme+desc&PERMS1=MjsxMDsyMDsyMTsyMjsyMzsyNDsyNTsyNjsyNzsyODsyOTszNTszNjszODszOTs0NDs0Njs1MDs1Mjs1NTs1Njs1ODs2MTs2Mjs2Mzs2NDs2NTs2Njs2OTs3MDs3Mzs3NDs3Nzs3ODs4OTs5MDs5NTs5NjsxMDE7MTAyOzEwNzsxMDg7MTEwOzExMTsxMjQ7MTI1OzEzMzsxMzQ7MTM4OzEzOTsxNDQ7MTQ1OzE0NzsxNDg7MTUxOzE1MjsxNTU7MTU2OzE1ODsxNTk7MTYxOzE2MjsxNjQ7MTY1OzE2NzsxNjg7MTcxOzE3MjsxNzQ7MTc1OzE3NzsxNzg7MTgwOzE4MTsxODM7MTg0OzE4NjsxODc7MTkwOzE5MTsxOTQ7MTk1OzE5OTsyMDA7MjAzOzIwNDsyMDc7MjA4OzIwOTsyMTE7MjEyOzIxNTsyMTY7MjE5OzIyMDsyMjI7MjIzOzIyNTsyMjY7MjMzOzIzNDs%3D&sintomas=97%3B0%3B70%3B39%3B77%3B19%3B1%3B80%3B95%3B98%3B22%3B76%3B42%3B88%3B89%3B36%3B40%3B2%3B3%3B21%3B20%3B116%3B56%3B109%3B87%3B52%3B4%3B93%3B107%3B111%3B31%3B27%3B5%3B55%3B114%3B17%3B43%3B83%3B41%3B6%3B54%3B26%3B28%3B69%3B91%3B33%3B94%3B74%3B7%3B110%3B18%3B57%3B30%3B112%3B86%3B90%3B75%3B118%3B68%3B58%3B104%3B8%3B23%3B25%3B24%3B92%3B9%3B79%3B59%3B117%3B81%3B51%3B71%3B34%3B10%3B60%3B105%3B102%3B103%3B78%3B11%3B12%3B106%3B85%3B82%3B37%3B72%3B73%3B13%3B14%3B15%3B16%3B96%3B101%3B38%3B32%3B99%3B29%3B113%3B100%3B35%3B84%3B115&remote_user=92465827&leo=&pagina=1&csv_output=1&pt_output=off&pt_id_tabela_csv=tabelaAlarme";
+
+function siteLines(raw: string) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of raw.split("\n")) {
+    const name = line.trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
+function freshKey(used: Set<string>) {
+  const p = (n: number) => String(n).padStart(2, "0");
+  const d = new Date();
+  for (let i = 0; i < 24 * 60; i++) {
+    const key = `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    if (!used.has(key)) return key;
+    d.setMinutes(d.getMinutes() + 1);
+  }
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
 function dayStamp(d = new Date()) {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -165,15 +187,6 @@ function csvSep(text: string) {
   return semi >= comma ? ";" : ",";
 }
 
-function fold(s: string) {
-  return s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-}
-
-function colOf(headers: string[], names: string[]) {
-  const h = headers.map(fold);
-  return h.findIndex((x) => names.some((n) => x.includes(n)));
-}
-
 function clockOf(raw: string) {
   let data = "";
   let hora = "";
@@ -187,43 +200,18 @@ function clockOf(raw: string) {
 }
 
 function csvToSnmp(text: string) {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("<"));
+  const clean = text.replace(/^\uFEFF/, "");
+  const lines = clean.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("<"));
   if (!lines.length) return "";
-  const sep = csvSep(text);
+  const sep = csvSep(clean);
   const rows = lines.map((l) => splitCsv(l, sep));
-  const header = fold(rows[0]!.join(" "));
-  const named = /equip|sintoma|alarme|regional|data|hora|host/.test(header);
-  const body = named ? rows.slice(1) : rows;
-  const idx = named
-    ? {
-        reg: colOf(rows[0]!, ["regional", "regiao", "sigla"]),
-        equip: colOf(rows[0]!, ["equipamento", "hostname", "elemento", "roteador", "site"]),
-        alarme: colOf(rows[0]!, ["sintoma", "alarme"]),
-        data: colOf(rows[0]!, ["data", "inicio", "abertura", "datetime", "datahora", "data_hora"]),
-        hora: colOf(rows[0]!, ["hora", "horario"]),
-      }
-    : { reg: -1, equip: -1, alarme: -1, data: -1, hora: -1 };
   const out: string[] = [];
-  for (const r of body) {
-    let reg = idx.reg >= 0 ? r[idx.reg] ?? "" : "";
-    let equip = idx.equip >= 0 ? r[idx.equip] ?? "" : "";
-    let alarme = idx.alarme >= 0 ? r[idx.alarme] ?? "" : "";
-    let { data, hora } = clockOf(`${idx.data >= 0 ? r[idx.data] ?? "" : ""} ${idx.hora >= 0 ? r[idx.hora] ?? "" : ""}`);
-    if (!named) {
-      for (const cell of r) {
-        if (!equip && /[A-Z0-9]{3,}[-_][A-Z0-9-]+/i.test(cell)) equip = cell;
-        const d = clockOf(cell);
-        if (d.data && !data) data = d.data;
-        if (d.hora && !hora) hora = d.hora;
-        if (!reg && /^[A-Z]{2}$/.test(cell)) reg = cell;
-      }
-    }
-    reg = reg.split(/\s+/)[0] ?? "";
-    equip = equip.replace(/\s+/g, "");
-    alarme = (alarme || "SEM_RESP_SNMP").replace(/\s+/g, "_");
-    if (!reg) reg = "SI";
-    if (!equip || !data || !hora) continue;
-    out.push(`${reg} ${equip} ${alarme} ${data} ${hora}`);
+  for (const r of rows) {
+    const equip = (r[2] ?? "").trim().replace(/\s+/g, "");
+    if (!/^SI/i.test(equip)) continue;
+    const when = clockOf(r[7] ?? "");
+    if (!when.data || !when.hora) continue;
+    out.push(`SI ${equip} SEM_RESP_SNMP ${when.data} ${when.hora}`);
   }
   return dedupeText(out.join("\n"));
 }
@@ -259,7 +247,7 @@ function Index() {
   const [reportShow, setReportShow] = useState({ obs1: true, obs2: true, sites: true });
   const [cols, setCols] = useState({ n: true, queda: true, qtd: true, sites: true, causa: true });
   const [liveText, setLiveText] = useState("");
-  const [liveState, setLiveState] = useState<"buscando" | "ok" | "erro">("buscando");
+  const [liveState, setLiveState] = useState<"idle" | "ok" | "erro">("idle");
   const [liveAt, setLiveAt] = useState("");
   const [liveError, setLiveError] = useState("");
   const [folded, setFolded] = useState<Record<string, boolean>>({});
@@ -314,38 +302,20 @@ function Index() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced, loaded]);
 
-  const pullSeq = useRef(0);
-  const pullLive = useCallback(async () => {
-    const seq = ++pullSeq.current;
-    setLiveState("buscando");
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 12000);
-    try {
-      const res = await fetch(LIVE_URL, { cache: "no-store", signal: ctrl.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const raw = await res.text();
-      if (seq !== pullSeq.current) return;
-      if (/<!doctype html|<html/i.test(raw)) throw new Error("resposta html");
-      const snmp = csvToSnmp(raw);
-      if (!snmp.trim()) throw new Error("vazio");
-      setLiveText(snmp);
-      setLiveError("");
-      setLiveAt(new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
-      setLiveState("ok");
-    } catch {
-      if (seq !== pullSeq.current) return;
+  const loadCsv = async (file: File) => {
+    const raw = await file.text();
+    const snmp = csvToSnmp(raw);
+    if (!snmp.trim()) {
+      setLiveText("");
       setLiveState("erro");
-      setLiveError("Sem acesso à planilha. A busca segue a cada 5 min.");
-    } finally {
-      clearTimeout(timer);
+      setLiveError("Nenhuma estação SI nessa planilha.");
+      return;
     }
-  }, []);
-
-  useEffect(() => {
-    void pullLive();
-    const t = setInterval(() => void pullLive(), LIVE_MS);
-    return () => clearInterval(t);
-  }, [pullLive]);
+    setLiveText(snmp);
+    setLiveError("");
+    setLiveAt(new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    setLiveState("ok");
+  };
 
   const restore = (h: Snap) => {
     const clean = dedupeText(h.text);
@@ -407,9 +377,21 @@ function Index() {
   const count = (k: string) => (groups[k]?.length || 0) + meta[k]!.extra.length;
 
   const addManual = () => {
-    const v = newKey.trim();
-    if (!/^\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}$/.test(v) || meta[v]) return;
-    setMeta((m) => ({ ...m, [v]: { obs1: "", causa: "", hidden: false, extra: [], color: Object.keys(m).length % PALETTE, manual: true } }));
+    const raw = newKey.trim();
+    if (!raw) return;
+    if (/^\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}$/.test(raw)) {
+      if (meta[raw]) return;
+      setMeta((m) => ({ ...m, [raw]: { obs1: "", causa: "", hidden: false, extra: [], sitesText: "", color: Object.keys(m).length % PALETTE, manual: true } }));
+      setNewKey("");
+      return;
+    }
+    const list = siteLines(newKey);
+    if (!list.length) return;
+    setMeta((m) => {
+      const key = freshKey(new Set(Object.keys(m)));
+      const text = list.join("\n");
+      return { ...m, [key]: { obs1: "", causa: "", hidden: false, extra: list, sitesText: text, color: Object.keys(m).length % PALETTE, manual: true } };
+    });
     setNewKey("");
   };
 
@@ -494,14 +476,18 @@ function Index() {
           })}
           {!manualSites.length && <p className="noc-muted">Nenhum equipamento reconhecido.</p>}
         </div>
-        <div className="noc-live">
+        <div className="noc-live" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) void loadCsv(f); }}>
           <div className="flex items-center justify-between gap-2">
             <h3 className="noc-title">SNMP automático</h3>
-            <button className="noc-btn" onClick={() => void pullLive()}>Atualizar</button>
+            <a className="noc-btn inline-block no-underline" href={LIVE_URL} target="_blank" rel="noreferrer">Baixar planilha</a>
+            <label className="noc-btn">
+              Abrir CSV
+              <input className="hidden" type="file" accept=".csv,text/csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadCsv(f); e.target.value = ""; }} />
+            </label>
           </div>
           <p className="noc-muted text-xs">
-            {liveState === "buscando" && "Buscando a planilha..."}
-            {liveState === "ok" && `${liveSites.length} equipamentos · ${liveAt}`}
+            {liveState === "idle" && "Na VPN, baixe a planilha e abra o CSV. Só entram estações SI."}
+            {liveState === "ok" && `${liveSites.length} estações SI · ${liveAt}`}
             {liveState === "erro" && liveError}
           </p>
           <div className="noc-lines">
@@ -521,7 +507,7 @@ function Index() {
       <section className="noc-col">
         <h2 className="noc-title text-center">Possíveis Massivas</h2>
         <div className="flex gap-2 justify-center mb-3">
-          <input className="noc-field w-48" placeholder="04/10/26 14:00" value={newKey} onChange={(e) => setNewKey(e.target.value)} />
+          <textarea className="noc-field w-48 h-20" placeholder={"SICPRR1\nSICPR08\nSICPR07"} value={newKey} onChange={(e) => setNewKey(e.target.value)} />
           <button className="noc-btn" onClick={addManual}>+ Adicionar</button>
         </div>
         <div className="flex flex-col gap-3 items-center">
@@ -553,6 +539,14 @@ function Index() {
                   </div>
                 </header>
                 <div className="noc-muted text-xs mt-2">{own.map((s) => s.equip).join(", ") || "—"}</div>
+                <label className="text-xs mt-2 block">Afetados
+                  <textarea className="noc-field h-20" placeholder={"SICPRR1\nSICPR08\nSICPR07"} value={m.sitesText ?? m.extra.join("\n")}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const ownSet = new Set(own.map((s) => s.equip));
+                      upd(k, { sitesText: raw, extra: siteLines(raw).filter((x) => !ownSet.has(x)) });
+                    }} />
+                </label>
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   <label className="text-xs">Obs1 (massiva)
                     <textarea className="noc-field h-20" value={m.obs1} onChange={(e) => upd(k, { obs1: e.target.value })} />
@@ -568,7 +562,10 @@ function Index() {
                       {others.map((s) => (
                         <label key={s.equip} className="text-xs flex gap-1 items-center">
                           <input type="checkbox" checked={m.extra.includes(s.equip)}
-                            onChange={(e) => upd(k, { extra: e.target.checked ? [...m.extra, s.equip] : m.extra.filter((x) => x !== s.equip) })} />
+                            onChange={(e) => {
+                              const extra = e.target.checked ? [...m.extra, s.equip] : m.extra.filter((x) => x !== s.equip);
+                              upd(k, { extra, sitesText: extra.join("\n") });
+                            }} />
                           {s.equip} <span className="noc-muted">{s.hora}</span>
                         </label>
                       ))}
