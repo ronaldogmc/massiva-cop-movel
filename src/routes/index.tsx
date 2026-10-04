@@ -24,11 +24,41 @@ const PALETTE = 8;
 const LS = "massivas-v1";
 const LINE = /^(\S+)\s+(\S+)\s+(\S+)\s+(\d{2}\/\d{2}\/\d{2})\s+(\d{2}:\d{2})/;
 
+function siteId(m: RegExpMatchArray) {
+  return `${m[1]}|${m[2]}|${m[3]}|${m[4]}|${m[5]}`;
+}
+
+function dedupeText(text: string): string {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  let lastBlank = false;
+  for (const l of text.split("\n")) {
+    const trimmed = l.trim();
+    if (!trimmed) {
+      if (!lastBlank && kept.length) kept.push("");
+      lastBlank = true;
+      continue;
+    }
+    lastBlank = false;
+    const m = trimmed.match(LINE);
+    const id = m ? `site:${siteId(m)}` : `line:${trimmed}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    kept.push(m ? trimmed : l);
+  }
+  return kept.join("\n");
+}
+
 function parse(text: string): Site[] {
   const out: Site[] = [];
+  const seen = new Set<string>();
   for (const l of text.split("\n")) {
     const m = l.trim().match(LINE);
-    if (m) out.push({ reg: m[1]!, equip: m[2]!, alarme: m[3]!, data: m[4]!, hora: m[5]!, key: `${m[4]} ${m[5]}` });
+    if (!m) continue;
+    const id = siteId(m);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ reg: m[1]!, equip: m[2]!, alarme: m[3]!, data: m[4]!, hora: m[5]!, key: `${m[4]} ${m[5]}` });
   }
   return out;
 }
@@ -53,8 +83,9 @@ function Index() {
   useEffect(() => {
     try {
       const s = JSON.parse(localStorage.getItem(LS) || "{}");
-      setText(s.text || "");
-      setDebounced(s.text || "");
+      const clean = dedupeText(s.text || "");
+      setText(clean);
+      setDebounced(clean);
       setMeta(s.meta || {});
       setHistory(s.history || []);
       setLastUpdate(s.lastUpdate || "");
@@ -85,8 +116,9 @@ function Index() {
   }, [debounced, loaded]);
 
   const restore = (h: Snap) => {
-    setText(h.text);
-    setDebounced(h.text);
+    const clean = dedupeText(h.text);
+    setText(clean);
+    setDebounced(clean);
     setMeta(h.meta);
   };
 
@@ -165,7 +197,7 @@ function Index() {
       {/* Coluna 1 */}
       <section className="noc-col">
         <h2 className="noc-title">SNMP</h2>
-        <textarea className="noc-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Cole aqui o relatório SNMP..." />
+        <textarea className="noc-input" value={text} onChange={(e) => setText(dedupeText(e.target.value))} placeholder="Cole aqui o relatório SNMP..." />
         <div className="noc-lines">
           {sites.map((s, i) => {
             const c = colorOf(s);
