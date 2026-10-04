@@ -178,3 +178,12 @@ body { font-family: ui-monospace, "JetBrains Mono", monospace; }
 .noc-table th { text-align: left; color: var(--muted-foreground); border-bottom: 1px solid var(--border); padding: 4px; }
 .noc-table td { border-bottom: 1px solid var(--border); padding: 4px; vertical-align: top; }
 .noc-dot { display: inline-block; width: 8px; height: 8px; border-radius: 9999px; margin-right: 6px; }
+.noc-page { display: flex; flex-direction: column; height: 100vh; }
+.noc-page .noc-grid { flex: 1; min-height: 0; height: auto; padding-top: 0; }
+.noc-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; padding: .75rem; }
+.noc-stat { background: var(--card); border: 1px solid var(--border); border-radius: .5rem; padding: .5rem .75rem; display: flex; justify-content: space-between; align-items: center; }
+.noc-stat span { color: var(--muted-foreground); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
+.noc-stat b { color: var(--primary); font-size: 1.4rem; }
+.noc-sites { font-size: .68rem; color: var(--muted-foreground); word-break: break-word; }
+.noc-hist { display: grid; grid-template-columns: auto 1fr auto auto; gap: .5rem; align-items: center; font-size: .75rem; padding: 4px 6px; border: 1px solid var(--border); border-radius: .375rem; }
+.noc-btn-ghost { color: var(--muted-foreground); padding: 0 .4rem; }

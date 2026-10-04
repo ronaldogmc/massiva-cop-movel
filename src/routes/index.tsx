@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -18,6 +18,7 @@ export const Route = createFileRoute("/")({
 type Site = { reg: string; equip: string; alarme: string; data: string; hora: string; key: string };
 type Meta = { obs1: string; causa: string; hidden: boolean; extra: string[]; color: number; manual?: boolean };
 
+type Snap = { id: number; at: string; text: string; meta: Record<string, Meta>; massivas: number; sites: number };
 const MIN_SITES = 3;
 const PALETTE = 8;
 const LS = "massivas-v1";
@@ -43,6 +44,10 @@ function Index() {
   const [meta, setMeta] = useState<Record<string, Meta>>({});
   const [loaded, setLoaded] = useState(false);
   const [newKey, setNewKey] = useState("");
+  const [history, setHistory] = useState<Snap[]>([]);
+  const [lastUpdate, setLastUpdate] = useState("");
+  const metaRef = useRef(meta);
+  metaRef.current = meta;
 
   useEffect(() => {
     try {
@@ -50,16 +55,39 @@ function Index() {
       setText(s.text || "");
       setDebounced(s.text || "");
       setMeta(s.meta || {});
+      setHistory(s.history || []);
+      setLastUpdate(s.lastUpdate || "");
     } catch {}
     setLoaded(true);
   }, []);
   useEffect(() => {
-    if (loaded) localStorage.setItem(LS, JSON.stringify({ text, meta }));
-  }, [text, meta, loaded]);
+    if (loaded) localStorage.setItem(LS, JSON.stringify({ text, meta, history, lastUpdate }));
+  }, [text, meta, history, lastUpdate, loaded]);
   useEffect(() => {
     const t = setTimeout(() => setDebounced(text), 600);
     return () => clearTimeout(t);
   }, [text]);
+
+  // snapshot on each SNMP change
+  useEffect(() => {
+    if (!loaded || !debounced.trim()) return;
+    if (history[0]?.text === debounced) return;
+    const t = setTimeout(() => {
+      const at = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      setLastUpdate(at);
+      const m = metaRef.current;
+      const act = Object.keys(m).filter((k) => !m[k]!.hidden).length;
+      setHistory((h) => (h[0]?.text === debounced ? h : [{ id: Date.now(), at, text: debounced, meta: m, massivas: act, sites: parse(debounced).length }, ...h].slice(0, 50)));
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debounced, loaded]);
+
+  const restore = (h: Snap) => {
+    setText(h.text);
+    setDebounced(h.text);
+    setMeta(h.meta);
+  };
 
   const sites = useMemo(() => parse(debounced), [debounced]);
   const groups = useMemo(() => {
@@ -109,8 +137,17 @@ function Index() {
   };
 
   const active = keys.filter((k) => !meta[k]!.hidden);
+  const sitesOf = (k: string) => [...(groups[k] || []).map((s) => s.equip), ...meta[k]!.extra];
+  const affected = new Set(active.flatMap(sitesOf)).size;
 
   return (
+    <div className="noc-page">
+    <div className="noc-stats">
+      <div className="noc-stat"><span>Massivas</span><b>{active.length}</b></div>
+      <div className="noc-stat"><span>Sites afetados</span><b>{affected}</b></div>
+      <div className="noc-stat"><span>Mais antiga</span><b>{active[0]?.split(" ")[1] ?? "—"}</b></div>
+      <div className="noc-stat"><span>Atualização</span><b>{lastUpdate || "—"}</b></div>
+    </div>
     <div className="noc-grid">
       {/* Coluna 1 */}
       <section className="noc-col">
@@ -185,18 +222,33 @@ function Index() {
       <section className="noc-col">
         <h2 className="noc-title">Resumo</h2>
         <table className="noc-table">
-          <thead><tr><th>QUEDA</th><th>QTD SITES</th><th>CAUSA</th></tr></thead>
+          <thead><tr><th>QUEDA</th><th>QTD</th><th>SITES</th><th>CAUSA</th></tr></thead>
           <tbody>
             {active.map((k) => (
               <tr key={k}>
-                <td><span className="noc-dot" style={{ background: `var(--m${meta[k]!.color})` }} />{k.split(" ")[1]}</td>
-                <td>{count(k)} ESTAÇÕES</td>
+                <td className="whitespace-nowrap"><span className="noc-dot" style={{ background: `var(--m${meta[k]!.color})` }} />{k.split(" ")[1]}</td>
+                <td className="whitespace-nowrap">{count(k)} ESTAÇÕES</td>
+                <td className="noc-sites">{sitesOf(k).join(", ")}</td>
                 <td>{meta[k]!.causa || "—"}</td>
               </tr>
             ))}
           </tbody>
         </table>
+
+        <h2 className="noc-title mt-6">Histórico</h2>
+        <div className="flex flex-col gap-1">
+          {history.map((h, i) => (
+            <div key={h.id} className="noc-hist">
+              <span>{h.at}</span>
+              <span className="noc-muted">{h.massivas} massivas · {h.sites} sites</span>
+              <button className="noc-btn" onClick={() => restore(h)}>Voltar</button>
+              <button className="noc-btn-ghost" onClick={() => setHistory((x) => x.filter((_, j) => j !== i))}>×</button>
+            </div>
+          ))}
+          {!history.length && <p className="noc-muted text-xs">Cada SNMP colado gera um registro aqui.</p>}
+        </div>
       </section>
+    </div>
     </div>
   );
 }
