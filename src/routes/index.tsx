@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -45,6 +45,8 @@ function Index() {
   const [newKey, setNewKey] = useState("");
   const [history, setHistory] = useState<Snap[]>([]);
   const [lastUpdate, setLastUpdate] = useState("");
+  const metaRef = useRef(meta);
+  metaRef.current = meta;
 
   useEffect(() => {
     try {
@@ -72,11 +74,9 @@ function Index() {
     const t = setTimeout(() => {
       const at = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
       setLastUpdate(at);
-      setMeta((m) => {
-        const act = Object.keys(m).filter((k) => !m[k]!.hidden).length;
-        setHistory((h) => [{ id: Date.now(), at, text: debounced, meta: m, massivas: act, sites: parse(debounced).length }, ...h].slice(0, 50));
-        return m;
-      });
+      const m = metaRef.current;
+      const act = Object.keys(m).filter((k) => !m[k]!.hidden).length;
+      setHistory((h) => (h[0]?.text === debounced ? h : [{ id: Date.now(), at, text: debounced, meta: m, massivas: act, sites: parse(debounced).length }, ...h].slice(0, 50)));
     }, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
