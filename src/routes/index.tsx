@@ -18,6 +18,7 @@ export const Route = createFileRoute("/")({
 type Site = { reg: string; equip: string; alarme: string; data: string; hora: string; key: string };
 type Meta = { obs1: string; causa: string; hidden: boolean; extra: string[]; color: number; manual?: boolean };
 
+type Snap = { id: number; at: string; text: string; meta: Record<string, Meta>; massivas: number; sites: number };
 const MIN_SITES = 3;
 const PALETTE = 8;
 const LS = "massivas-v1";
