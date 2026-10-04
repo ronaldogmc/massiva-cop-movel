@@ -27,12 +27,12 @@ function parse(text: string): Site[] {
   const out: Site[] = [];
   for (const l of text.split("\n")) {
     const m = l.trim().match(LINE);
-    if (m) out.push({ reg: m[1], equip: m[2], alarme: m[3], data: m[4], hora: m[5], key: `${m[4]} ${m[5]}` });
+    if (m) out.push({ reg: m[1]!, equip: m[2]!, alarme: m[3]!, data: m[4]!, hora: m[5]!, key: `${m[4]} ${m[5]}` });
   }
   return out;
 }
 const sortVal = (k: string) => {
-  const [d, h] = k.split(" ");
+  const [d = "", h = ""] = k.split(" ");
   const [dd, mm, yy] = d.split("/");
   return `${yy}${mm}${dd}${h}`;
 };
@@ -90,16 +90,16 @@ function Index() {
   }, [groups, loaded]);
 
   const keys = Object.keys(meta).sort((a, b) => sortVal(a).localeCompare(sortVal(b)));
-  const upd = (k: string, p: Partial<Meta>) => setMeta((m) => ({ ...m, [k]: { ...m[k], ...p } }));
+  const upd = (k: string, p: Partial<Meta>) => setMeta((m) => ({ ...m, [k]: { ...m[k]!, ...p } as Meta }));
   const remove = (k: string) => setMeta((m) => { const n = { ...m }; delete n[k]; return n; });
 
   const colorOf = (s: Site): number | null => {
     const own = meta[s.key];
     if (own && !own.hidden) return own.color;
-    for (const k of keys) if (!meta[k].hidden && meta[k].extra.includes(s.equip)) return meta[k].color;
+    for (const k of keys) if (!meta[k]!.hidden && meta[k]!.extra.includes(s.equip)) return meta[k]!.color;
     return null;
   };
-  const count = (k: string) => (groups[k]?.length || 0) + meta[k].extra.length;
+  const count = (k: string) => (groups[k]?.length || 0) + meta[k]!.extra.length;
 
   const addManual = () => {
     const v = newKey.trim();
@@ -108,7 +108,7 @@ function Index() {
     setNewKey("");
   };
 
-  const active = keys.filter((k) => !meta[k].hidden);
+  const active = keys.filter((k) => !meta[k]!.hidden);
 
   return (
     <div className="noc-grid">
@@ -138,7 +138,7 @@ function Index() {
         </div>
         <div className="flex flex-col gap-3 items-center">
           {keys.map((k) => {
-            const m = meta[k];
+            const m = meta[k]!;
             const own = groups[k] || [];
             const others = sites.filter((s) => s.key !== k);
             return (
@@ -189,9 +189,9 @@ function Index() {
           <tbody>
             {active.map((k) => (
               <tr key={k}>
-                <td><span className="noc-dot" style={{ background: `var(--m${meta[k].color})` }} />{k.split(" ")[1]}</td>
+                <td><span className="noc-dot" style={{ background: `var(--m${meta[k]!.color})` }} />{k.split(" ")[1]}</td>
                 <td>{count(k)} ESTAÇÕES</td>
-                <td>{meta[k].causa || "—"}</td>
+                <td>{meta[k]!.causa || "—"}</td>
               </tr>
             ))}
           </tbody>
