@@ -167,16 +167,26 @@ body { font-family: ui-monospace, "JetBrains Mono", monospace; }
 .noc-title { font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--primary); margin-bottom: .5rem; }
 .noc-input { height: 9rem; width: 100%; background: var(--background); border: 1px solid var(--border); border-radius: .375rem; padding: .5rem; font-size: .7rem; flex-shrink: 0; }
 .noc-lines { margin-top: .5rem; display: flex; flex-direction: column; gap: 2px; font-size: .72rem; }
+.noc-live { margin-top: .75rem; border: 1px solid var(--border); border-radius: .5rem; padding: .5rem; background: var(--background); }
+.noc-live .noc-lines { max-height: 28vh; overflow: auto; }
+.noc-live .noc-title { font-size: .85rem; margin: 0; }
 .noc-line { display: flex; justify-content: space-between; padding: 2px 6px; border-radius: 3px; }
 .noc-muted { color: var(--muted-foreground); }
 .noc-field { width: 100%; background: var(--background); border: 1px solid var(--border); border-radius: .375rem; padding: .35rem; font-size: .75rem; margin-top: 2px; }
 .noc-btn { background: var(--primary); color: var(--primary-foreground); border-radius: .375rem; padding: .25rem .6rem; font-size: .72rem; font-weight: 600; }
 .noc-btn:hover { filter: brightness(1.1); }
 .noc-card { width: 100%; max-width: 640px; border: 2px solid; border-radius: .5rem; padding: .75rem; background: var(--background); }
+.noc-card-min { width: 100%; max-width: 640px; border-radius: .5rem; padding: .3rem .55rem; display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-weight: 700; white-space: nowrap; }
+.noc-card-min > span { overflow: hidden; text-overflow: ellipsis; }
+.noc-card-min .noc-btn { background: oklch(0.15 0.02 250 / 80%); color: oklch(0.95 0.01 250); }
 .noc-badge { color: var(--m-fg); padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: .8rem; }
-.noc-table { width: 100%; font-size: .78rem; border-collapse: collapse; }
+.noc-table { width: 100%; font-size: .78rem; border-collapse: collapse; table-layout: fixed; }
 .noc-table th { text-align: left; color: var(--muted-foreground); border-bottom: 1px solid var(--border); padding: 4px; }
-.noc-table td { border-bottom: 1px solid var(--border); padding: 4px; vertical-align: top; }
+.noc-table td { border-bottom: 1px solid var(--border); padding: 4px; vertical-align: top; overflow: hidden; }
+.noc-w-n { width: 2rem; }
+.noc-w-queda { width: 4.5rem; }
+.noc-w-qtd { width: 6.5rem; }
+.noc-clamp { max-height: 4.2rem; overflow: auto; word-break: break-word; overflow-wrap: anywhere; }
 .noc-dot { display: inline-block; width: 8px; height: 8px; border-radius: 9999px; margin-right: 6px; }
 .noc-page { display: flex; flex-direction: column; height: 100vh; }
 .noc-page .noc-grid { flex: 1; min-height: 0; height: auto; padding-top: 0; }
