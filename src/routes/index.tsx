@@ -1,24 +1,202 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Monitor de Massivas SNMP" },
+      { name: "description", content: "Detecta possíveis massivas a partir do relatório SNMP do IPRAN." },
+      { property: "og:title", content: "Monitor de Massivas SNMP" },
+      { property: "og:description", content: "Detecta possíveis massivas a partir do relatório SNMP do IPRAN." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
+type Site = { reg: string; equip: string; alarme: string; data: string; hora: string; key: string };
+type Meta = { obs1: string; causa: string; hidden: boolean; extra: string[]; color: number; manual?: boolean };
+
+const MIN_SITES = 3;
+const PALETTE = 8;
+const LS = "massivas-v1";
+const LINE = /^(\S+)\s+(\S+)\s+(\S+)\s+(\d{2}\/\d{2}\/\d{2})\s+(\d{2}:\d{2})/;
+
+function parse(text: string): Site[] {
+  const out: Site[] = [];
+  for (const l of text.split("\n")) {
+    const m = l.trim().match(LINE);
+    if (m) out.push({ reg: m[1], equip: m[2], alarme: m[3], data: m[4], hora: m[5], key: `${m[4]} ${m[5]}` });
+  }
+  return out;
+}
+const sortVal = (k: string) => {
+  const [d, h] = k.split(" ");
+  const [dd, mm, yy] = d.split("/");
+  return `${yy}${mm}${dd}${h}`;
+};
+
 function Index() {
+  const [text, setText] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [meta, setMeta] = useState<Record<string, Meta>>({});
+  const [loaded, setLoaded] = useState(false);
+  const [newKey, setNewKey] = useState("");
+
+  useEffect(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem(LS) || "{}");
+      setText(s.text || "");
+      setDebounced(s.text || "");
+      setMeta(s.meta || {});
+    } catch {}
+    setLoaded(true);
+  }, []);
+  useEffect(() => {
+    if (loaded) localStorage.setItem(LS, JSON.stringify({ text, meta }));
+  }, [text, meta, loaded]);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(text), 600);
+    return () => clearTimeout(t);
+  }, [text]);
+
+  const sites = useMemo(() => parse(debounced), [debounced]);
+  const groups = useMemo(() => {
+    const g: Record<string, Site[]> = {};
+    sites.forEach((s) => (g[s.key] ||= []).push(s));
+    return g;
+  }, [sites]);
+
+  // register new massivas keeping previous metadata/colors
+  useEffect(() => {
+    if (!loaded) return;
+    setMeta((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      const used = Object.values(next).map((m) => m.color);
+      Object.entries(groups).forEach(([k, list]) => {
+        if (list.length >= MIN_SITES && !next[k]) {
+          let c = 0;
+          while (used.includes(c) && c < PALETTE) c++;
+          if (c >= PALETTE) c = Object.keys(next).length % PALETTE;
+          used.push(c);
+          next[k] = { obs1: "", causa: "", hidden: false, extra: [], color: c };
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [groups, loaded]);
+
+  const keys = Object.keys(meta).sort((a, b) => sortVal(a).localeCompare(sortVal(b)));
+  const upd = (k: string, p: Partial<Meta>) => setMeta((m) => ({ ...m, [k]: { ...m[k], ...p } }));
+  const remove = (k: string) => setMeta((m) => { const n = { ...m }; delete n[k]; return n; });
+
+  const colorOf = (s: Site): number | null => {
+    const own = meta[s.key];
+    if (own && !own.hidden) return own.color;
+    for (const k of keys) if (!meta[k].hidden && meta[k].extra.includes(s.equip)) return meta[k].color;
+    return null;
+  };
+  const count = (k: string) => (groups[k]?.length || 0) + meta[k].extra.length;
+
+  const addManual = () => {
+    const v = newKey.trim();
+    if (!/^\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}$/.test(v) || meta[v]) return;
+    setMeta((m) => ({ ...m, [v]: { obs1: "", causa: "", hidden: false, extra: [], color: Object.keys(m).length % PALETTE, manual: true } }));
+    setNewKey("");
+  };
+
+  const active = keys.filter((k) => !meta[k].hidden);
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
+    <div className="noc-grid">
+      {/* Coluna 1 */}
+      <section className="noc-col">
+        <h2 className="noc-title">SNMP</h2>
+        <textarea className="noc-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Cole aqui o relatório SNMP..." />
+        <div className="noc-lines">
+          {sites.map((s, i) => {
+            const c = colorOf(s);
+            return (
+              <div key={i} className="noc-line" style={c !== null ? { background: `var(--m${c})`, color: "var(--m-fg)" } : undefined}>
+                <span>{s.equip}</span><span>{s.hora}</span>
+              </div>
+            );
+          })}
+          {!sites.length && <p className="noc-muted">Nenhum equipamento reconhecido.</p>}
+        </div>
+      </section>
+
+      {/* Coluna 2 */}
+      <section className="noc-col">
+        <h2 className="noc-title text-center">Possíveis Massivas</h2>
+        <div className="flex gap-2 justify-center mb-3">
+          <input className="noc-field w-48" placeholder="04/10/26 14:00" value={newKey} onChange={(e) => setNewKey(e.target.value)} />
+          <button className="noc-btn" onClick={addManual}>+ Adicionar</button>
+        </div>
+        <div className="flex flex-col gap-3 items-center">
+          {keys.map((k) => {
+            const m = meta[k];
+            const own = groups[k] || [];
+            const others = sites.filter((s) => s.key !== k);
+            return (
+              <article key={k} className={`noc-card ${m.hidden ? "opacity-40" : ""}`} style={{ borderColor: `var(--m${m.color})` }}>
+                <header className="flex items-center justify-between gap-2">
+                  <span className="noc-badge" style={{ background: `var(--m${m.color})` }}>{k}</span>
+                  <span className="font-semibold">{count(k)} estações</span>
+                  <div className="flex gap-1">
+                    <button className="noc-btn" onClick={() => upd(k, { hidden: !m.hidden })}>{m.hidden ? "Ativar" : "Ocultar"}</button>
+                    {m.manual && <button className="noc-btn" onClick={() => remove(k)}>Remover</button>}
+                  </div>
+                </header>
+                <div className="noc-muted text-xs mt-2">{own.map((s) => s.equip).join(", ") || "—"}</div>
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  <label className="text-xs">Obs1 (massiva)
+                    <textarea className="noc-field h-20" value={m.obs1} onChange={(e) => upd(k, { obs1: e.target.value })} />
+                  </label>
+                  <label className="text-xs">Causa (Obs2)
+                    <textarea className="noc-field h-20" value={m.causa} onChange={(e) => upd(k, { causa: e.target.value })} />
+                  </label>
+                </div>
+                {others.length > 0 && (
+                  <details className="mt-3">
+                    <summary className="text-xs cursor-pointer">Correlação ({m.extra.length} adicionados)</summary>
+                    <div className="grid grid-cols-2 gap-1 mt-2 max-h-40 overflow-auto">
+                      {others.map((s) => (
+                        <label key={s.equip} className="text-xs flex gap-1 items-center">
+                          <input type="checkbox" checked={m.extra.includes(s.equip)}
+                            onChange={(e) => upd(k, { extra: e.target.checked ? [...m.extra, s.equip] : m.extra.filter((x) => x !== s.equip) })} />
+                          {s.equip} <span className="noc-muted">{s.hora}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </article>
+            );
+          })}
+          {!keys.length && <p className="noc-muted">Nenhuma massiva detectada (3+ sites no mesmo horário).</p>}
+        </div>
+      </section>
+
+      {/* Coluna 3 */}
+      <section className="noc-col">
+        <h2 className="noc-title">Resumo</h2>
+        <table className="noc-table">
+          <thead><tr><th>QUEDA</th><th>QTD SITES</th><th>CAUSA</th></tr></thead>
+          <tbody>
+            {active.map((k) => (
+              <tr key={k}>
+                <td><span className="noc-dot" style={{ background: `var(--m${meta[k].color})` }} />{k.split(" ")[1]}</td>
+                <td>{count(k)} ESTAÇÕES</td>
+                <td>{meta[k].causa || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
     </div>
   );
 }
