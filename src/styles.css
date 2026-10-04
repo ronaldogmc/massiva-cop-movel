@@ -187,3 +187,10 @@ body { font-family: ui-monospace, "JetBrains Mono", monospace; }
 .noc-sites { font-size: .68rem; color: var(--muted-foreground); word-break: break-word; }
 .noc-hist { display: grid; grid-template-columns: auto 1fr auto auto; gap: .5rem; align-items: center; font-size: .75rem; padding: 4px 6px; border: 1px solid var(--border); border-radius: .375rem; }
 .noc-btn-ghost { color: var(--muted-foreground); padding: 0 .4rem; }
+.noc-page .noc-grid { grid-template-columns: auto 1fr auto; }
+.noc-grid > .noc-col:first-child { width: 20vw; min-width: 180px; max-width: 45vw; resize: horizontal; }
+.noc-grid > .noc-col:last-child { width: 28vw; min-width: 220px; max-width: 60vw; resize: horizontal; direction: rtl; }
+.noc-grid > .noc-col:last-child > * { direction: ltr; }
+.noc-modal-bg { position: fixed; inset: 0; background: oklch(0 0 0 / 60%); display: grid; place-items: center; z-index: 50; }
+.noc-modal { background: var(--card); border: 1px solid var(--border); border-radius: .75rem; padding: 1.25rem; width: min(720px, 92vw); }
+.noc-report { white-space: pre-wrap; font-size: .85rem; background: var(--background); padding: .75rem; border-radius: .5rem; max-height: 60vh; overflow: auto; }

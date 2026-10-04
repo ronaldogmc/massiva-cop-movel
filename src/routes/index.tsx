@@ -44,6 +44,7 @@ function Index() {
   const [meta, setMeta] = useState<Record<string, Meta>>({});
   const [loaded, setLoaded] = useState(false);
   const [newKey, setNewKey] = useState("");
+  const [modal, setModal] = useState(false);
   const [history, setHistory] = useState<Snap[]>([]);
   const [lastUpdate, setLastUpdate] = useState("");
   const metaRef = useRef(meta);
@@ -148,6 +149,18 @@ function Index() {
       <div className="noc-stat"><span>Mais antiga</span><b>{active[0]?.split(" ")[1] ?? "—"}</b></div>
       <div className="noc-stat"><span>Atualização</span><b>{lastUpdate || "—"}</b></div>
     </div>
+    {modal && (
+      <div className="noc-modal-bg" onClick={() => setModal(false)}>
+        <div className="noc-modal" onClick={(e) => e.stopPropagation()}>
+          <h2 className="noc-title">Resumo para Gestão</h2>
+          <pre className="noc-report">{`Massivas: ${active.length} | Sites afetados: ${affected} | Atualização: ${lastUpdate}\n\n` + active.map((k) => `${k.split(" ")[1]} | ${count(k)} ESTAÇÕES | ${meta[k]!.causa || "-"}\n  ${sitesOf(k).join(", ")}`).join("\n")}</pre>
+          <div className="flex gap-2 justify-end mt-3">
+            <button className="noc-btn" onClick={() => navigator.clipboard.writeText(`Massivas: ${active.length} | Sites afetados: ${affected} | Atualização: ${lastUpdate}\n\n` + active.map((k) => `${k.split(" ")[1]} | ${count(k)} ESTAÇÕES | ${meta[k]!.causa || "-"}\n  ${sitesOf(k).join(", ")}`).join("\n"))}>Copiar</button>
+            <button className="noc-btn-ghost" onClick={() => setModal(false)}>Fechar</button>
+          </div>
+        </div>
+      </div>
+    )}
     <div className="noc-grid">
       {/* Coluna 1 */}
       <section className="noc-col">
@@ -220,7 +233,7 @@ function Index() {
 
       {/* Coluna 3 */}
       <section className="noc-col">
-        <h2 className="noc-title">Resumo</h2>
+        <h2 className="noc-title flex justify-between">Resumo <button className="noc-btn" onClick={() => setModal(true)}>Gestão</button></h2>
         <table className="noc-table">
           <thead><tr><th>QUEDA</th><th>QTD</th><th>SITES</th><th>CAUSA</th></tr></thead>
           <tbody>
